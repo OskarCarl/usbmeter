@@ -30,31 +30,17 @@ usbmeter --addr <ADDRESS> --graph
 
 # Save data
 
+Data can be saved in a CSV file.
+Timestamps are relative to the first record.
 To save the power data to a file:
 
 ```
-usbmeter --addr <ADDRESS> --graph --out out.dat
 usbmeter --addr <ADDRESS> --graph --out out.csv
-```
-
-To process this pickled data, you can do:
-
-```
-#!/usr/bin/python3
-import pickle
-objects = []
-
-with open('out.dat', 'rb') as f:
-    while True:
-        try:
-            objects.append(pickle.load(f))
-        except EOFError:
-            break
-
-for x in objects:
-    print("%s,%f,%f" % (x['time'],x['Volts'],x['Amps']))
 ```
 
 # Acknowledgements
 
 The original version of this script was written by [anfractuosity](https://github.com/anfractuosity/usbmeter).
+I've originally modified it to remove the dependency on PyBluez
+as it is considered deprecated
+and the functionality works pretty well with the socket functions from the standard library.

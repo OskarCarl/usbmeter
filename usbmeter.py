@@ -4,20 +4,21 @@
 # echo "power on" | bluetoothctl
 
 import collections
-import sys
 import argparse
 import datetime
 import time
-import pickle
+import csv
+import os
+import struct
+import socket
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange
-from bluetooth import *
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.dates import DateFormatter
 
 
 # Process socket data from USB meter and extract volts, amps etc.
-def processdata(d):
-
+def process_data(d):
     data = {}
 
     data["Volts"] = struct.unpack(">h", d[2 : 3 + 1])[0] / 1000.0  # volts
@@ -43,81 +44,56 @@ def processdata(d):
     data["resistance"] = struct.unpack(">I", d[122: 125 + 1])[0] / 10.0  # resistance
     return data
 
-
-if __name__ == "__main__":
-
+def setup():
     # Parse arguments
     parser = argparse.ArgumentParser(description="CLI for USB Meter")
-    parser.add_argument("--addr", dest="addr", type=str, help="Address of USB Meter")
+    parser.add_argument("--addr", dest="addr", type=str, help="Address of USB Meter", required=True)
     parser.add_argument("--graph", dest="graph", help="Live graphing", nargs="?", default=False)
     parser.add_argument(
         "--out",
         dest="out",
         type=str,
-        help="Filename to output data to",
+        help="Filename to output data to. If it exists, it is overwritten",
         required=False,
         default="",
     )
 
     args = parser.parse_args()
-    addr = None
     graph = not (args.graph == False)
+    outfile = None
 
-    if args.addr:
-        addr = args.addr
-        sock = BluetoothSocket(RFCOMM)
-        res = sock.connect((addr, 1))
-    else:
+    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM) # pyright: reportAttributeAccessIssue=false
+    sock.connect((args.addr, 1))
 
-        # Automagically find USB meter
-        nearby_devices = discover_devices(lookup_names=True)
+    if args.out != "":
+        if os.path.exists(args.out):
+            print("File {} already exists. It will be overwritten.".format(args.out))
+            os.remove(args.out)
+        outfile = open(args.out, "w")
 
-        for v in nearby_devices:
-            if "UM25C" in v[1]:
-                print("Found", v[0])
-                addr = v[0]
-                break
+    return sock, graph, outfile
 
-        if addr is None:
-            print("No address provided", file=sys.stderr)
-            quit()
-
-        service_matches = find_service(address=addr)
-
-        if len(service_matches) == 0:
-            print("No services found for address ", addr, file=sys.stderr)
-            quit()
-
-        first_match = service_matches[0]
-        port = first_match["port"]
-        name = first_match["name"]
-        host = first_match["host"]
-
-        if host is None or port is None:
-            print("Host or port not specified", file=sys.stderr)
-            quit()
-
-        sock = BluetoothSocket(RFCOMM)
-        print('connecting to "{}" on {}:{}'.format(name, host, port))
-        res = sock.connect((host, port))
-
+def loop(sock: socket.socket, graph=False, outfile=None):
     # Initialise variables for graph
-    leng = 20
-    volts = collections.deque(maxlen=leng)
-    currents = collections.deque(maxlen=leng)
-    watts = collections.deque(maxlen=leng)
-    times = collections.deque(maxlen=leng)
+    l = 20
+    volts = collections.deque(maxlen=l)
+    currents = collections.deque(maxlen=l)
+    watts = collections.deque(maxlen=l)
+    times = collections.deque(maxlen=l)
 
+    f, ax1, ax2, ax3 = None, None, None, None
     if graph:
         f, (ax1, ax2, ax3) = plt.subplots(3, sharex=True)
         plt.show(block=False)
 
-    if args.out != "":
-        pickle_file = open(args.out, "ab")
-    else:
-        pickle_file = None
+    csv_file = None
+    if outfile is not None:
+        csv_file = csv.writer(outfile)
+        csv_file.writerow(["time", "Volts", "Amps", "Watts"])
+        first = 0
 
     d = b""
+    ct = 0
     while True:
 
         # Send request to USB meter
@@ -128,13 +104,17 @@ if __name__ == "__main__":
         if len(d) != 130:
             continue
 
-        data = processdata(d)
+        data = process_data(d)
         volts.append(data["Volts"])
         currents.append(data["Amps"])
         watts.append(data["Watts"])
         times.append(data["time"])
 
         if graph and plt.get_fignums():
+            assert isinstance(ax1, Axes)
+            assert isinstance(ax2, Axes)
+            assert isinstance(ax3, Axes)
+            assert isinstance(f, Figure)
 
             ax1.clear()
             ax1.plot(times, volts)
@@ -155,12 +135,32 @@ if __name__ == "__main__":
             f.canvas.flush_events()
             plt.pause(0.001)
 
-        print("%s: %fV %fA %fW" % (data["time"], data["Volts"], data["Amps"], data["Watts"]))
+        print("{}: {:.3f}V {:.3f}A {:.3f}W".format(data["time"], data["Volts"], data["Amps"], data["Watts"]))
 
-        if pickle_file is not None:
-            pickle.dump(data, pickle_file)
+        if csv_file is not None:
+            assert outfile is not None
+            if first == 0: # pyright: reportPossiblyUnboundVariable=false
+                first = data["time"]
+            csv_file.writerow([data["time"] - first, data["Volts"], data["Amps"], data["Watts"]])
+            if ct % 10 == 0:
+                outfile.flush()
+            ct += 1
 
         d = b""
         time.sleep(0.01)
 
-    sock.close()
+def main():
+    sock, graph, outfile = setup()
+    try:
+        loop(sock, graph, outfile)
+    except KeyboardInterrupt:
+        print("\nReceived Ctrl+C, shutting down gracefully...")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if outfile is not None:
+            outfile.close()
+        sock.close()
+
+if __name__ == "__main__":
+    main()
