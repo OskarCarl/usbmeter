@@ -2,20 +2,17 @@
 
 Extracts and graphs data from UM25C etc. USB power meters in Linux.
 
-Based on the excellent reverse engineering found here - https://sigrok.org/wiki/RDTech_UM24C.  
+Based on the excellent reverse engineering found [here](https://sigrok.org/wiki/RDTech_UM_series).
 
 ![graph](/images/graph.png)
 
-# Install on arch
+# Install using [uv](https://docs.astral.sh/uv/)
 
 ```
-sudo pacman -S bluez
-sudo pacman -S bluez-utils 
-sudo pacman -S python-pybluez
-pip3 install . --user
+uv sync
 ```
 
-# Run on arch
+# Run on Linux
 
 Start the bluetooth service:
 
@@ -31,16 +28,13 @@ graph of voltage, current and power:
 usbmeter --addr <ADDRESS> --graph
 ```
 
-You can also run without the --addr parameter, for the device
-to be detected automatically, however some people have told 
-me that this gives 'No services found for address ....' for them.
-
 # Save data
 
 To save the power data to a file:
 
 ```
 usbmeter --addr <ADDRESS> --graph --out out.dat
+usbmeter --addr <ADDRESS> --graph --out out.csv
 ```
 
 To process this pickled data, you can do:
@@ -61,7 +55,6 @@ for x in objects:
     print("%s,%f,%f" % (x['time'],x['Volts'],x['Amps']))
 ```
 
-# Licence
+# Acknowledgements
 
-MIT
-
+The original version of this script was written by [anfractuosity](https://github.com/anfractuosity/usbmeter).

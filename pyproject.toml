@@ -1,0 +1,14 @@
+[project]
+name = "usbmeter"
+version = "0.1.0"
+authors = [
+	{name = "Oskar Carl"},
+	{name = "anfractuosity"},
+]
+description = "Monitor USB power etc. using UM25C devices"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.10.3",
+]
